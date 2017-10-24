@@ -19,7 +19,7 @@
 static const char *TAG = "UDPbroadcast";
 #include "i2c.h"
 #include "ccs811.h"
-
+#include "adsens.h"
 
 
 static void initialise_wifi(void);
@@ -56,8 +56,12 @@ void sensTask(void *pvParameters)
     {
         static char strBuf[1000];
         static uint16_t co2,voc;
+        static uint32_t svp,svn;
         getCCS811(&co2,&voc);
-        sprintf(strBuf,"{\"c\":%u,\"v\":%u}",co2,voc);
+        svp=getSVP();
+        svn=getSVN();
+        
+        sprintf(strBuf,"{\"c\":%u,\"v\":%u,\"p\":%u,\"n\":%u}",co2,voc,svp,svn);
         ESP_LOGI(TAG,"%s",strBuf);
         int len=strlen(strBuf);
         sendto(sensSocket, strBuf,len, 0, (struct sockaddr *)&sens_addr, sizeof(sens_addr));
@@ -86,6 +90,7 @@ static void setup(void)
 {
     i2c_setup_master();
     initCCS811();
+    adsense_setup();
 }
 
 
