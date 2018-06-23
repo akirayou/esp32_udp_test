@@ -18,7 +18,7 @@
 
 static const char *TAG = "UDPbroadcast";
 #include "i2c.h"
-#include "ccs811.h"
+#include "vz89te.h"
 #include "adsens.h"
 
 
@@ -52,20 +52,26 @@ void sensTask(void *pvParameters)
     sens_addr.sin_family = AF_INET;
     sens_addr.sin_addr.s_addr = wifi_get_broadcast_ip();
     sens_addr.sin_port = htons(13533);
+
+
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = 1000/ portTICK_PERIOD_MS;
     while (true)
     {
+        vTaskDelayUntil( &xLastWakeTime, xFrequency );
         static char strBuf[1000];
-        static uint16_t co2,voc;
+        static uint8_t co2,voc;
         static uint32_t svp,svn;
-        getCCS811(&co2,&voc);
+        for(int i=0;i<8;i++){
+            if(getVZ89TE(&co2,&voc))break;
+        }
         svp=getSVP();
         svn=getSVN();
         
-        sprintf(strBuf,"{\"c\":%u,\"v\":%u,\"p\":%u,\"n\":%u}",co2,voc,svp,svn);
+        sprintf(strBuf,"{\"c\":%u,\"v\":%u,\"p\":%u,\"n\":%u}",(uint)co2,(uint)voc,svp,svn);
         ESP_LOGI(TAG,"%s",strBuf);
         int len=strlen(strBuf);
         sendto(sensSocket, strBuf,len, 0, (struct sockaddr *)&sens_addr, sizeof(sens_addr));
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -89,7 +95,7 @@ static void loop(void)
 static void setup(void)
 {
     i2c_setup_master();
-    initCCS811();
+    initVZ89TE();
     adsense_setup();
 }
 
@@ -159,8 +165,10 @@ void app_main()
 {
     ++boot_count;
     ESP_LOGI(TAG, "Boot count: %d", boot_count);
-    setup();
     initialise_wifi();
+
+    setup();
+    
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT,
                         false, true, portMAX_DELAY);
     if (ESP_OK == setupWithIP())
@@ -226,6 +234,7 @@ static uint32_t wifi_get_broadcast_ip(void)
 
 static void initialise_wifi(void)
 {
+    nvs_flash_init();
     tcpip_adapter_init();
     wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
